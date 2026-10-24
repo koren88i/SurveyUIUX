@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+if [ -x .venv/Scripts/python.exe ]; then
+  .venv/Scripts/python.exe scripts/check_public_release.py --staged --check-identity
+elif [ -x .venv/bin/python ]; then
+  .venv/bin/python scripts/check_public_release.py --staged --check-identity
+else
+  python scripts/check_public_release.py --staged --check-identity
+fi

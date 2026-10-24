@@ -1,0 +1,5 @@
+domain,dimension,label,full_text,source_column
+manager,Clarity,Manager sets context,manager_sets_context,A
+manager,Prioritization,Manager prioritizes,manager_prioritizes,B
+team,Knowledge sharing,Team shares knowledge,team_shares_knowledge,C
+feedback_quality,Feedback,Feedback is actionable,feedback_is_actionable,D

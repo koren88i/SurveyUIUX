@@ -1,0 +1,31 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.streamlit/
+
+.env
+.env.*
+!.env.example
+
+*.tmp
+*.log
+# Private survey artifacts are local-only. Keep public samples under samples/.
+data/*
+!data/.gitkeep
+!data/README.md
+static/demo.html
+
+# Block private inputs/exports even when saved outside data/.
+*.xlsx
+*.xls
+*.xlsm
+*.jsonl
+*.sqlite*
+*.db
+*.pem
+*.key
+secrets/
+exports/
+private/
+.public-release/

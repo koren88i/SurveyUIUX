@@ -1,0 +1,6 @@
+team,tenure,manager_sets_context,manager_prioritizes,team_shares_knowledge,feedback_is_actionable,open_manager_keep,open_manager_change,open_team_improve,open_team_keep
+Team A,0-6 months,8,7,9,8,"Explains context before work starts","Give feedback a little earlier","Share ownership of follow-up tasks","Keep the daily sync short and focused"
+Team A,6-18 months,6,6,7,6,"Available for questions","Clarify priorities when everything is urgent","Document decisions in one place","Keep helping each other debug"
+Team B,0-6 months,4,5,5,4,"Cares about the team","Set clearer priorities","Reduce knowledge silos","Keep the supportive atmosphere"
+Team B,18+ months,7,8,6,7,"Gives autonomy","Close the loop after decisions","Improve handoff notes","Keep retrospectives practical"
+Team C,6-18 months,9,8,8,9,"Recognizes good work","Delegate earlier","Make planning more predictable","Keep sharing lessons learned"

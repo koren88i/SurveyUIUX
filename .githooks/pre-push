@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" != refs/heads/main ]; then
+    echo 'Publication is restricted to the reviewed main branch.' >&2
+    exit 1
+  fi
+  if [ -x .venv/Scripts/python.exe ]; then
+    .venv/Scripts/python.exe scripts/check_public_release.py --ref "$local_sha" --history
+  elif [ -x .venv/bin/python ]; then
+    .venv/bin/python scripts/check_public_release.py --ref "$local_sha" --history
+  else
+    python scripts/check_public_release.py --ref "$local_sha" --history
+  fi
+done
