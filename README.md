@@ -53,7 +53,7 @@ On macOS or Linux, activate with `source .venv/bin/activate` instead. `run_app.b
 
 The app needs a survey workbook. Upload an `.xlsx` file in the sidebar, or put it at `data/survey.xlsx` for local use. If no workbook is available, the app displays an upload prompt.
 
-The workbook must contain these sheets:
+The original workbook format contains these sheets. Other forms use the local profile format described below.
 
 | Sheet | Required content |
 | --- | --- |
@@ -61,6 +61,18 @@ The workbook must contain these sheets:
 | `מיפוי וחישובים` | A question table with `תחום`, `ממד`, `תווית קצרה`, `נוסח מלא`, and `עמודת מקור`. The loader finds the header row automatically. |
 
 The fake CSVs in [`samples/`](samples/README.md) illustrate the expected data shape. They are examples only; the app loads Excel workbooks, not CSV files.
+
+### Other survey forms
+
+The Streamlit sidebar lists local `.xlsx` files under `data/`, so separate surveys can be explored without replacing the original workbook. Local files are initially ordered by filename, descending.
+
+A form with a different layout needs a private `data/<workbook-stem>.profile.json`. The profile identifies the sheet and its exact header fingerprint, group and split fields, question labels and categories, and physical source columns. Multiple role-specific source columns can map to one shared question. Each numeric record retains the actual source column and Excel row. Profile-backed forms validate integer scores from 1 to 10; `zero_is_missing: true` treats 0 as not relevant and excludes it from every numeric calculation and question response count. Small-group thresholds apply to valid scores for each question.
+
+For these forms, the interface uses the configured group/split labels, supports filtering by role and question audience, and recalculates the comparison average within the active role filter. Uploads can use a matching profile already present locally. Changed headers require a reviewed profile update; they are not silently remapped.
+
+Profile-backed surveys use separate `<workbook-stem>_evidence_links.jsonl` and `<workbook-stem>_evidence_status.json` files under `data/`. The batch manifest and parsed evidence carry the workbook fingerprint; the interface refuses evidence for a different workbook version. Use these separate paths with `semantic_batch.py prepare` and `parse`. Preparing requests is local; submitting them sends open answers to the API.
+
+The HTML explorer also supports profile-backed forms. Build a separate private artifact with `python build_demo.py --excel data/<workbook>.xlsx --output data/<workbook>.html`. Add `--serve --port 8502` to open it at `http://127.0.0.1:8502`. This server binds to localhost and serves only the generated HTML. The role selector filters responses and question eligibility; the question-group selector distinguishes shared and role-specific questions. The file is self-contained and embeds the included scores and evidence, so keep it private. Rebuild it after changing the workbook, profile, evidence, or UI.
 
 ## Demos
 
@@ -76,6 +88,8 @@ For a private, self-contained HTML export of a local workbook, run `python build
 
 Numeric analysis works without evidence files. To show classified open-text statements alongside scores, upload a matching evidence JSONL file in the sidebar or generate `data/evidence_links.jsonl` with the batch pipeline below. If you upload a different workbook without matching evidence, the app shows numeric lineage only.
 
+Both interfaces also provide a source-answer tab for the respondents included in the selected numeric result. Each open question appears once in a collapsible section, with role labels, response counts, and answers grouped by role. These comments are shown as original answers, without implying that they support the selected question. Importing a workbook does not automatically run evidence classification. The status distinguishes imported free text from classified question links. To restrict batch preparation to specific open questions, repeat `--source-question QUESTION_ID` on the `prepare` command.
+
 The pipeline sends informative open answers and the question catalog to the OpenAI Batch API. It asks the model to split answers into individual statements, match them to questions, and label their direction. **Survey scores are not included in those model requests.** Review your organization's data handling requirements before submitting real responses to the API.
 
 After setting `OPENAI_API_KEY`, run these commands from the project directory (replace `BATCH_ID` with the returned ID):
@@ -88,7 +102,7 @@ python semantic_batch.py download --batch-id BATCH_ID --output data/batch_output
 python semantic_batch.py parse --batch-output data/batch_output.jsonl --manifest data/open_answer_manifest.csv --excel data/survey.xlsx --evidence data/evidence_links.jsonl --status-file data/evidence_status.json --batch-id BATCH_ID
 ```
 
-Add `--rebuild-demo` to `parse` to update the private static HTML export after parsing. Batch preparation and parsing can be run locally; submission, status, and download require API access.
+For the original workbook, add `--rebuild-demo` to `parse` to update `static/demo.html`. This flag still targets the original workbook; for a profile-backed survey, rebuild explicitly with `build_demo.py --excel ... --output ...` after parsing. Batch preparation and parsing can be run locally; submission, status, and download require API access. Batch jobs run asynchronously; submission is not evidence that classification has completed. See [survey import and evidence operations](docs/SURVEY_IMPORT.md) for the profile schema and separate artifact paths.
 
 ## Privacy and project layout
 
@@ -108,4 +122,4 @@ Before publishing, run `python scripts/check_public_release.py --staged`. The ch
 | `semantic_batch.py`, `evidence.py` | Evidence generation, loading, and joining to responses. |
 | `build_demo.py`, `build_public_demo.py` | Private and synthetic static HTML builders. |
 
-See [architecture](ARCHITECTURE.md) for the data flow and [validation](VALIDATION.md) for test coverage. Run the tests with `python -m pytest -q`.
+See [current status](STATUS.md), [session handoff](SESSION_HANDOFF.md), [architecture](ARCHITECTURE.md), and [validation](VALIDATION.md). Run the tests with `python -m pytest -q`.

@@ -38,3 +38,19 @@ The public builder:
 - supports checking rendered HTML against an explicitly supplied set of forbidden names. The build does not read private files to discover names; publication checks must verify the generated artifact separately.
 
 The public HTML is a built artifact. The source of truth is `build_public_demo.py` plus the current static UI template extracted from `build_demo.py`.
+
+## Multiple workbook layouts
+
+`load_model` first looks for a matching private profile. A sidecar named `<workbook-stem>.profile.json`, or a local profile with the same sheet/header fingerprint for an upload, selects the form loader. Without a matching profile, the original two-sheet loader is used. Duplicate matching profiles and changed sidecar headers are rejected.
+
+A profile maps physical columns and respondent roles to logical questions. Corresponding branch questions share a question ID, while the numeric records retain their actual source column, row, sheet, and question wording. Role mismatches, duplicate branch answers, and invalid scores are rejected. A profile can explicitly exclude zero as not relevant; excluded values never reach the metric engine. The internal `team` and `tenure` fields remain compatible with the original engine, while survey metadata supplies the actual group and role labels.
+
+Both renderers filter responses by role and restrict question eligibility to the selected audience. Comparison means use the active role cohort. The HTML exporter accepts explicit input/output paths and can serve a single generated artifact on localhost with `Cache-Control: no-store`.
+
+## Source answers and classified evidence
+
+The source-answer tab groups informative answers by logical open question and then role, using a single collapsible question heading. It selects only respondents contributing valid scores to the selected numeric cell. Source comments are not presented as evidence for that question until separately classified.
+
+Batch preparation filters the question catalog by domain and role eligibility, and can optionally restrict the source open-question IDs. Model payloads contain the source prompt, answer text, and eligible question catalog; scores and respondent context are excluded from those payloads. The local manifest retains the respondent join and workbook fingerprint. Parsing checks that fingerprint and question eligibility; profile-backed renderers reject evidence from other workbook versions.
+
+For profile-backed surveys, evidence/status artifacts are named per workbook. Preparing requests, submitting a batch, downloading output, parsing evidence, and rebuilding HTML are distinct operations. Local automation may chain these steps, but a submitted or processing batch must not be reported as applied evidence. The generic CLI does not automatically monitor submitted jobs.

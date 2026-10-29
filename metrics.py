@@ -49,12 +49,15 @@ def compute_matrix(
     if view == "team_tenure" and selected_team:
         data = data[data["team"] == selected_team]
 
+    if data.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
     group_cols = _group_columns(view)
     branch = branch_stats(numeric)
     if group_cols:
         grouped = data.groupby(group_cols + ["question_id"])["score"]
     else:
-        data = data.assign(_all="כלל הענף")
+        data = data.assign(_all="כלל המשיבים")
         group_cols = ["_all"]
         grouped = data.groupby(group_cols + ["question_id"])["score"]
 
@@ -152,7 +155,7 @@ def drilldown(
         "rows": selected[[
             "response_id", "source_excel_row", "team", "tenure", "score", "source_column",
             "question_label", "dimension", "domain",
-        ]].sort_values(["team", "tenure", "response_id"]),
+        ] + [column for column in ["source_sheet", "source_question_text"] if column in selected.columns]].sort_values(["team", "tenure", "response_id"]),
         "response_ids": set(selected["response_id"].astype(int)),
     }
 

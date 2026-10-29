@@ -6,12 +6,15 @@
 ARCHITECTURE.md
 PRIVACY_REVIEW.md
 README.md
+SESSION_HANDOFF.md
+STATUS.md
 VALIDATION.md
 app.py
 build_demo.py
 build_public_demo.py
 data/.gitkeep
 data/README.md
+docs/SURVEY_IMPORT.md
 docs/images/linked-evidence.png
 docs/images/overview.png
 docs/images/score-drilldown.png

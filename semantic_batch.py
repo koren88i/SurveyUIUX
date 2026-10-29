@@ -11,7 +11,7 @@ import sys
 
 import pandas as pd
 
-from survey_loader import load_model
+from survey_loader import load_model, workbook_fingerprint
 
 PROMPT_VERSION = "question-evidence-v1"
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
@@ -85,13 +85,21 @@ def build_user_prompt(answer: dict, questions: list[dict]) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-def prepare(excel: Path, requests_path: Path, manifest_path: Path, model: str) -> None:
+def prepare(excel: Path, requests_path: Path, manifest_path: Path, model: str, source_question_ids: list[str] | None = None) -> None:
     _, catalog, _, open_answers = load_model(excel)
     informative = open_answers[open_answers["informative"]].copy()
+    if source_question_ids:
+        unknown = set(source_question_ids) - set(open_answers["source_question_id"])
+        if unknown:
+            raise ValueError(f"Unknown open-question IDs: {sorted(unknown)}")
+        informative = informative[informative["source_question_id"].isin(source_question_ids)]
     requests = []
     manifest_records = []
     for answer in informative.to_dict("records"):
-        domain_questions = catalog[catalog["domain"] == answer["domain"]].to_dict("records")
+        candidates = catalog[catalog["domain"] == answer["domain"]]
+        if "audience" in candidates.columns:
+            candidates = candidates[candidates["audience"].isin(["all", answer["tenure"]])]
+        domain_questions = candidates.to_dict("records")
         custom_id = answer["answer_id"]
         body = {
             "model": model,
@@ -204,12 +212,16 @@ def parse(
     model: str | None = None,
     rebuild_demo: bool = False,
 ) -> None:
-    _, catalog, _, _ = load_model(catalog_source)
+    responses, catalog, _, _ = load_model(catalog_source)
     allowed_by_domain = {
         domain: set(group["question_id"])
         for domain, group in catalog.groupby("domain")
     }
     manifest_frame = pd.read_csv(manifest_path, encoding="utf-8-sig")
+    if responses.attrs.get("survey") and (
+        "survey_id" not in manifest_frame or not manifest_frame["survey_id"].eq(workbook_fingerprint(catalog_source)).all()
+    ):
+        raise ValueError("Batch manifest does not match the current workbook.")
     manifest = manifest_frame.set_index("answer_id")
     manifest_count = int(len(manifest_frame))
     run_id = run_id or datetime.now(timezone.utc).strftime("batch-%Y%m%dT%H%M%SZ")
@@ -263,6 +275,11 @@ def parse(
                             "error": f"question_not_allowed:{question_id}",
                         })
                         continue
+                    if "audience" in catalog.columns:
+                        audience = catalog.set_index("question_id").at[question_id, "audience"]
+                        if audience not in {"all", meta["tenure"]}:
+                            errors.append({"line": line_number, "custom_id": custom_id, "error": "question_audience_mismatch"})
+                            continue
                     answers_with_evidence.add(str(custom_id))
                     records.append({
                         "segment_id": f"{custom_id}_s{segment_counter:02d}_m{match_index:02d}",
@@ -284,6 +301,7 @@ def parse(
                         "model": response_model or model or DEFAULT_MODEL,
                         "prompt_version": PROMPT_VERSION,
                         "run_id": run_id,
+                        "survey_id": meta.get("survey_id"),
                     })
 
     _write_jsonl_atomic(evidence_path, records)
@@ -356,6 +374,7 @@ def main() -> None:
     p.add_argument("--requests", type=Path, required=True)
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--source-question", action="append", help="Optional open-question ID to include; repeat for multiple questions")
 
     p = sub.add_parser("submit")
     p.add_argument("--requests", type=Path, required=True)
@@ -380,7 +399,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "prepare":
-        prepare(args.excel, args.requests, args.manifest, args.model)
+        prepare(args.excel, args.requests, args.manifest, args.model, args.source_question)
     elif args.command == "submit":
         submit(args.requests)
     elif args.command == "status":

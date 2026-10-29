@@ -155,7 +155,7 @@ def build_public_payload() -> dict[str, Any]:
 
 def _extract_demo_template() -> str:
     source = (ROOT / "build_demo.py").read_text(encoding="utf-8")
-    match = re.search(r"html = r'''([\s\S]*)'''\.replace\('__DATA__', json_blob\)", source)
+    match = re.search(r"HTML_TEMPLATE = r'''([\s\S]*?)'''", source)
     if not match:
         raise RuntimeError("Could not extract HTML template from build_demo.py")
     template = match.group(1)

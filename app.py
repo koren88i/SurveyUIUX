@@ -10,7 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from survey_loader import load_model
+from survey_loader import load_model, workbook_fingerprint
 from metrics import (
     METRICS,
     compute_matrix,
@@ -22,7 +22,7 @@ from metrics import (
     sort_matrix_rows,
     team_question_distribution,
 )
-from evidence import load_evidence, load_status, evidence_for_selection, relation_counts
+from evidence import load_evidence, load_status, evidence_for_selection, relation_counts, matches_survey
 from ui_helpers import extract_selected_cell
 
 ROOT = Path(__file__).parent
@@ -45,12 +45,12 @@ html, body, [class*="css"] { direction: rtl; text-align: right; }
 """, unsafe_allow_html=True)
 
 @st.cache_data(show_spinner=False)
-def cached_load(path: str, file_bytes: bytes | None):
+def cached_load(path: str, file_bytes: bytes | None, fingerprint: str, profile_versions: tuple):
     source = file_bytes if file_bytes is not None else path
     return load_model(source)
 
 @st.cache_data(show_spinner=False)
-def cached_evidence(path: str, file_bytes: bytes | None):
+def cached_evidence(path: str, file_bytes: bytes | None, modified: int = 0):
     return load_evidence(file_bytes if file_bytes is not None else path)
 
 
@@ -64,7 +64,7 @@ def evidence_card_html(row: dict, css_class: str) -> str:
         f"<div class='evidence-card {css_class}'><b>{html_text(row.get('evidence_span'))}</b><br>"
         f"{html_text(row.get('explanation'))}<br><span class='small-note'>"
         f"משיב {html_text(response_id)} · "
-        f"וותק: {html_text(row.get('tenure'))} · "
+        f"{html_text(split_label)}: {html_text(row.get('tenure'))} · "
         f"ציון אישי: {html_text(row.get('score'))} · "
         f"{html_text(row.get('relevance'))} · {html_text(row.get('confidence'))}<br>"
         f"{html_text(row.get('personal_alignment'))}</span></div>"
@@ -74,41 +74,74 @@ def evidence_card_html(row: dict, css_class: str) -> str:
 
 
 st.title("🔎 חוקר שאלות, ציונים וסימוכין")
-st.caption("בחירת תא מחזירה את הציונים שיצרו אותו, פילוחי ותק, אמירות תומכות/סותרות ו-lineage עד שורת המקור ב-Excel.")
+st.caption("בחירת תא מציגה את הציונים שיצרו אותו, פילוחים, אמירות מקושרות ו-lineage עד תא המקור ב-Excel.")
 
 with st.sidebar:
     st.header("מקור נתונים")
     uploaded = st.file_uploader("Excel מתקדם", type=["xlsx"])
     file_bytes = uploaded.getvalue() if uploaded else None
-    source_name = uploaded.name if uploaded else DEFAULT_EXCEL.name
+    local_workbooks = sorted((ROOT / "data").glob("*.xlsx"), reverse=True)
+    local_path = st.selectbox("סקר מקומי", local_workbooks, format_func=lambda path: path.name) if local_workbooks and not uploaded else DEFAULT_EXCEL
+    source_name = uploaded.name if uploaded else local_path.name
     st.caption(f"מקור פעיל: {source_name}")
     uploaded_evidence = st.file_uploader("Evidence JSONL תואם (אופציונלי)", type=["jsonl"])
     evidence_bytes = uploaded_evidence.getvalue() if uploaded_evidence else None
-    st.divider()
-    st.header("תצוגה")
-    view_label = st.radio("רמת הסתכלות", ["כלל הענף", "לפי צוות", "לפי ותק", "צוות לפי ותק"])
-    view = {"כלל הענף":"general", "לפי צוות":"team", "לפי ותק":"tenure", "צוות לפי ותק":"team_tenure"}[view_label]
-    metric_label = st.selectbox("מדד בתאים", list(METRICS.values()), index=1)
-    metric = next(key for key, value in METRICS.items() if value == metric_label)
-    domain_label = st.selectbox("תחום", ["הכול", "הערכת ראש צוות", "אפקטיביות צוות", "איכות המשוב"])
-    domain = {"הכול":"all", "הערכת ראש צוות":"manager", "אפקטיביות צוות":"team", "איכות המשוב":"feedback_quality"}[domain_label]
-    min_group_size = st.number_input("מינימום משיבים", min_value=3, max_value=10, value=MIN_GROUP_SIZE)
 
-if file_bytes is None and not DEFAULT_EXCEL.exists():
+if file_bytes is None and not local_path.exists():
     st.info(
         "No private survey workbook was found. Upload an Excel file in the sidebar, "
         "or place the private workbook under data/ for local-only use."
     )
     st.stop()
 
-responses, catalog, numeric, open_answers = cached_load(str(DEFAULT_EXCEL), file_bytes)
+source = file_bytes if file_bytes is not None else local_path
+fingerprint = workbook_fingerprint(source)
+try:
+    profile_versions = tuple((str(path), path.stat().st_mtime_ns) for path in sorted((ROOT / "data").glob("*.profile.json")))
+    responses, catalog, numeric, open_answers = cached_load(str(local_path), file_bytes, fingerprint, profile_versions)
+except ValueError as exc:
+    st.error(str(exc))
+    st.stop()
+survey = responses.attrs.get("survey", {})
+group_label = survey.get("group_label", "צוות")
+split_label = survey.get("split_label", "וותק")
+st.caption(survey.get("label", source_name))
+if survey.get("zero_is_missing"):
+    st.info("0 = לא רלוונטי. ציונים אלה אינם נכללים בממוצעים, בהתפלגויות או במספר המשיבים לשאלה (N).")
+
+with st.sidebar:
+    st.divider()
+    st.header("תצוגה")
+    views = {"כלל המשיבים": "general", f"לפי {group_label}": "team", f"לפי {split_label}": "tenure", f"{group_label} לפי {split_label}": "team_tenure"}
+    view_label = st.radio("רמת הסתכלות", list(views))
+    view = views[view_label]
+    if survey:
+        roles = sorted(responses["tenure"].astype(str).unique())
+        role = st.selectbox(f"סינון לפי {split_label}", ["הכול"] + roles)
+        if role != "הכול":
+            numeric = numeric[numeric["tenure"].eq(role)].copy()
+        audiences = catalog["audience"].unique().tolist()
+        audience = st.selectbox("קבוצת שאלות", ["הכול"] + audiences, format_func=lambda value: "שאלות משותפות" if value == "all" else value)
+        if audience != "הכול":
+            catalog = catalog[catalog["audience"].eq(audience)].copy()
+            numeric = numeric[numeric["question_id"].isin(catalog["question_id"])].copy()
+    st.caption("הממוצע להשוואה מחושב מכל המשיבים התואמים לסינון הפעיל, לכל שאלה בנפרד.")
+    metric_options = dict(METRICS, delta="פער מהממוצע הכללי")
+    metric = st.selectbox("מדד בתאים", list(metric_options), index=1, format_func=metric_options.get)
+    metric_label = metric_options[metric]
+    domains = catalog[["domain", "domain_label"]].drop_duplicates().set_index("domain")["domain_label"].to_dict()
+    domain = st.selectbox("תחום", ["all"] + list(domains), format_func=lambda value: domains.get(value, "הכול"))
+    min_group_size = st.number_input("מינימום משיבים", min_value=3, max_value=10, value=MIN_GROUP_SIZE)
 teams = sorted(responses["team"].astype(str).unique())
 selected_team = None
 if view == "team_tenure":
-    selected_team = st.sidebar.selectbox("צוות", teams)
+    selected_team = st.sidebar.selectbox(group_label, teams)
 
 # Load the semantic evidence before building the heatmap so hover can show
 # supporting and contradicting statement counts for every visible cell.
+if survey:
+    EVIDENCE_PATH = ROOT / "data" / f"{Path(source_name).stem}_evidence_links.jsonl"
+    STATUS_PATH = ROOT / "data" / f"{Path(source_name).stem}_evidence_status.json"
 if uploaded and evidence_bytes is None:
     evidence = load_evidence(b"")
     evidence_status = {
@@ -116,11 +149,17 @@ if uploaded and evidence_bytes is None:
         "message": "הועלה Excel חלופי ללא evidence תואם; מוצג lineage מספרי בלבד.",
     }
 else:
-    evidence = cached_evidence(str(EVIDENCE_PATH), evidence_bytes)
+    evidence = cached_evidence(str(EVIDENCE_PATH), evidence_bytes, EVIDENCE_PATH.stat().st_mtime_ns if EVIDENCE_PATH.exists() else 0)
     evidence_status = (
         {"status": "uploaded", "message": "נטען קובץ evidence שהועלה ידנית."}
         if evidence_bytes is not None else load_status(STATUS_PATH)
     )
+    if survey and not matches_survey(evidence, fingerprint):
+        evidence = load_evidence(b"")
+        evidence_status = {"status": "mismatched", "message": "המלל אינו שייך לגרסה הנוכחית של הסקר; מוצגים ציונים בלבד."}
+
+if evidence_status.get("status") in {"missing", "missing_for_uploaded_excel"}:
+    evidence_status = {"status": "not_classified", "message": f"נטענו {int(open_answers['informative'].sum())} תשובות תוכן פתוחות; טרם בוצע סיווג וקישור לשאלות המספריות."}
 
 matrix, matrix_stats = compute_matrix(
     numeric, catalog, view, metric, selected_team=selected_team,
@@ -199,7 +238,8 @@ for group in y_labels:
 
 if metric == "delta":
     colorscale = [[0, "#b2182b"], [0.5, "#f7f7f7"], [1, "#2166ac"]]
-    zmax = max(abs(np.nanmin(z)), abs(np.nanmax(z)), 0.5)
+    finite_z = z[np.isfinite(z)]
+    zmax = max(float(np.abs(finite_z).max()), 0.5) if finite_z.size else 0.5
     zmin = -zmax
 elif metric in {"high", "low"}:
     colorscale = "RdYlGn" if metric == "high" else "RdYlGn_r"
@@ -221,7 +261,7 @@ fig = go.Figure(go.Heatmap(
         "<b>%{y}</b><br><b>%{x}</b><br>"
         + metric_label + ": %{z:.2f}<br>"
         "N: %{customdata[0]}<br>ממוצע: %{customdata[1]:.2f}<br>"
-        "ממוצע ענפי: %{customdata[2]:.2f}<br>פער: %{customdata[3]:+.2f}<br>"
+        "ממוצע כללי: %{customdata[2]:.2f}<br>פער: %{customdata[3]:+.2f}<br>"
         "אמירות תומכות: %{customdata[7]}<br>"
         "סטיית תקן: %{customdata[9]:.2f}<br>התפלגות ציונים: %{customdata[10]}<br>"
         "אמירות סותרות/מסייגות: %{customdata[8]}<extra></extra>"
@@ -321,14 +361,13 @@ elif view == "team_tenure":
 else:
     highlighted_team = None
 
-st.subheader(f"השוואת כל הצוותים — {meta['label']}")
+st.subheader(f"השוואת קבוצות ({group_label}) — {meta['label']}")
 st.caption(
-    "כל עמודה מייצגת את ממוצע הצוות בשאלה שנבחרה. הקו המקווקו הוא הממוצע הענפי; "
-    "הצוות שנבחר מודגש כאשר הבחירה היא ברמת צוות."
+    f"כל עמודה מייצגת {group_label} בשאלה שנבחרה. הקו המקווקו הוא הממוצע הכללי בסינון הפעיל."
 )
 
 if eligible_distribution.empty:
-    st.info("אין צוותים שעומדים בסף הפרטיות עבור השאלה שנבחרה.")
+    st.info("אין קבוצות שעומדות בסף הפרטיות עבור השאלה שנבחרה.")
 else:
     support_counts = []
     contradict_counts = []
@@ -363,7 +402,7 @@ else:
         ]),
         hovertemplate=(
             "<b>%{y}</b><br>ממוצע: %{x:.2f}<br>N: %{customdata[0]}<br>"
-            "פער מהענף: %{customdata[1]:+.2f}<br>"
+            "פער מהממוצע: %{customdata[1]:+.2f}<br>"
             "אמירות תומכות: %{customdata[2]}<br>"
             "אמירות סותרות/מסייגות: %{customdata[3]}<extra></extra>"
         ),
@@ -373,19 +412,19 @@ else:
         x=branch_mean_for_chart,
         line_dash="dash",
         line_color="#17365D",
-        annotation_text=f"ממוצע ענפי {branch_mean_for_chart:.2f}",
+        annotation_text=f"ממוצע כללי {branch_mean_for_chart:.2f}",
         annotation_position="top",
     )
     team_fig.update_layout(
         height=max(420, 31 * len(eligible_distribution) + 120),
-        xaxis={"title": "ממוצע צוות", "range": [0, 10.6]},
+        xaxis={"title": f"ממוצע {group_label}", "range": [0, 10.6]},
         yaxis={"title": "", "categoryorder": "array", "categoryarray": eligible_distribution["team"].tolist()},
         margin=dict(l=30, r=60, t=45, b=35),
         showlegend=False,
     )
     st.plotly_chart(team_fig, use_container_width=True, key=f"team_distribution_{selected_qid}")
     if hidden_teams:
-        st.caption("צוותים שלא הוצגו בגלל סף הפרטיות: " + ", ".join(hidden_teams))
+        st.caption("קבוצות שלא הוצגו בגלל סף הפרטיות: " + ", ".join(hidden_teams))
 
 st.divider()
 st.header(f"{selected_group} — {meta['label']}")
@@ -394,7 +433,7 @@ st.caption(meta["full_text"])
 s = detail["stats"]
 k1, k2, k3, k4, k5 = st.columns(5)
 k1.metric("ממוצע קבוצה", "—" if s["mean"] is None else f"{s['mean']:.2f}")
-k2.metric("ממוצע ענפי", "—" if s["branch_mean"] is None else f"{s['branch_mean']:.2f}")
+k2.metric("ממוצע כללי", "—" if s["branch_mean"] is None else f"{s['branch_mean']:.2f}")
 k3.metric("פער", "—" if s["delta"] is None else f"{s['delta']:+.2f}")
 k4.metric("N", s["n"])
 k5.metric("טווח בין־רבעוני", "—" if s["p25"] is None else f"{s['p25']:.1f}–{s['p75']:.1f}")
@@ -406,8 +445,8 @@ if s["n"] < min_group_size:
 numeric_direction = result_direction(s["delta"])
 selected_evidence = evidence_for_selection(evidence, selected_qid, detail["response_ids"], numeric_direction, detail["rows"])
 
-raw_tab, split_tab, support_tab, contradict_tab, lineage_tab = st.tabs([
-    "ציונים גולמיים", "פילוח נוסף", "אמירות תומכות", "אמירות סותרות/מסייגות", "Lineage",
+raw_tab, split_tab, open_tab, support_tab, contradict_tab, lineage_tab = st.tabs([
+    "ציונים גולמיים", "פילוח נוסף", "תשובות פתוחות בקבוצה", "אמירות תומכות", "אמירות סותרות/מסייגות", "Lineage",
 ])
 
 with raw_tab:
@@ -436,11 +475,27 @@ with raw_tab:
     )
     st.plotly_chart(dist_fig, use_container_width=True)
 with split_tab:
-    split = detail["rows"].groupby("tenure")["score"].agg(N="count", ממוצע="mean", חציון="median").reset_index().rename(columns={"tenure":"וותק"})
-    split["פער מהענף"] = split["ממוצע"] - s["branch_mean"]
-    split.loc[split["N"] < min_group_size, ["ממוצע", "חציון", "פער מהענף"]] = np.nan
-    st.dataframe(split.style.format({"ממוצע":"{:.2f}", "חציון":"{:.2f}", "פער מהענף":"{:+.2f}"}), use_container_width=True, hide_index=True)
-    st.caption("כל קבוצת ותק נבדקת שוב מול סף הפרטיות.")
+    split = detail["rows"].groupby("tenure")["score"].agg(N="count", ממוצע="mean", חציון="median").reset_index().rename(columns={"tenure":split_label})
+    split["פער מהממוצע"] = split["ממוצע"] - s["branch_mean"]
+    split.loc[split["N"] < min_group_size, ["ממוצע", "חציון", "פער מהממוצע"]] = np.nan
+    st.dataframe(split.style.format({"ממוצע":"{:.2f}", "חציון":"{:.2f}", "פער מהממוצע":"{:+.2f}"}), use_container_width=True, hide_index=True)
+    st.caption(f"כל קבוצת {split_label} נבדקת שוב מול סף הפרטיות.")
+
+with open_tab:
+    st.info("תשובות המקור של המשיבים שנכללו בתוצאה. הן אינן בהכרח ראיות לשאלה שנבחרה; קישור לשאלות מופיע רק בלשוניות האמירות המסווגות.")
+    source_answers = open_answers[open_answers["response_id"].isin(detail["response_ids"]) & open_answers["informative"]]
+    if source_answers.empty:
+        st.info("אין תשובות תוכן בקבוצה זו.")
+    for index, (_, question_answers) in enumerate(source_answers.groupby("source_question_id", sort=False)):
+        question_label = question_answers.iloc[0]["source_question_label"]
+        question_roles = " / ".join(question_answers["tenure"].astype(str).drop_duplicates())
+        with st.expander(f"{question_label} · {question_roles} · {len(question_answers)} תשובות", expanded=index == 0):
+            for role, role_answers in question_answers.groupby("tenure", sort=False):
+                st.markdown(f"**{split_label}: {role} · {len(role_answers)} תשובות**")
+                for answer in role_answers.to_dict("records"):
+                    st.caption(f"R{answer['response_id']:03d}")
+                    st.write(answer["raw_text"])
+                    st.divider()
 
 with support_tab:
     st.caption(f"סטטוס שכבת המלל: {evidence_status.get('message', evidence_status.get('status'))}")
@@ -465,15 +520,19 @@ with contradict_tab:
 
 with lineage_tab:
     source_rows = ", ".join(map(str, detail["rows"]["source_excel_row"].tolist()))
+    source_sheet = survey.get("sheet", "נתונים גולמיים")
+    source_columns = ", ".join(detail["rows"]["source_column"].drop_duplicates())
     st.markdown(f"""
 1. **תא נבחר:** `{selected_group} × {meta['label']}`  
-2. **עמודת המקור ב-Excel:** `נתונים גולמיים!{meta['source_column']}:{meta['source_column']}`  
+2. **גיליון ועמודות המקור ב-Excel:** `{source_sheet}` — `{source_columns}`
 3. **שורות המקור שנכללו:** `{source_rows}`  
 4. **ממוצע הקבוצה:** ממוצע {s['n']} הציונים = **{s['mean']:.4f}**  
-5. **ממוצע ענפי:** ממוצע כל הציונים בשאלה = **{s['branch_mean']:.4f}**  
+5. **ממוצע כללי:** ממוצע הציונים בשאלה בסינון הפעיל = **{s['branch_mean']:.4f}**
 6. **פער:** {s['mean']:.4f} − {s['branch_mean']:.4f} = **{s['delta']:+.4f}**  
 7. **ממד:** {meta['dimension']}  
 8. **שכבת מלל:** התאמת LLM נעשית ללא חשיפה לציונים; היחס 'תומכת/סותרת' מחושב לאחר מכן באופן דטרמיניסטי לפי כיוון הפער.  
 9. **סטטוס evidence:** `{evidence_status.get('status')}`  
 """)
-    st.dataframe(detail["rows"][["response_id", "source_excel_row", "team", "tenure", "score"]], use_container_width=True, hide_index=True)
+    lineage_rows = detail["rows"].copy()
+    lineage_rows["source_cell"] = lineage_rows["source_column"] + lineage_rows["source_excel_row"].astype(str)
+    st.dataframe(lineage_rows[["response_id", "source_excel_row", "source_cell", "team", "tenure", "score"]].rename(columns={"team":group_label, "tenure":split_label}), use_container_width=True, hide_index=True)

@@ -10,7 +10,7 @@ REQUIRED_COLUMNS = [
     "segment_id", "answer_id", "response_id", "team", "tenure", "source_question_id",
     "source_question_label", "raw_text", "segment_text", "question_id", "relevance",
     "direction", "evidence_span", "explanation", "confidence", "coding_source",
-    "model", "prompt_version", "run_id",
+    "model", "prompt_version", "run_id", "survey_id",
 ]
 
 
@@ -41,6 +41,10 @@ def load_status(path: str | Path) -> dict:
     if not path.exists():
         return {"status": "missing", "message": "לא נטען קובץ evidence."}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def matches_survey(evidence: pd.DataFrame, survey_id: str) -> bool:
+    return evidence.empty or ("survey_id" in evidence and bool(evidence["survey_id"].eq(survey_id).all()))
 
 
 def classify_relation(direction: str, numeric_direction: str) -> str:
