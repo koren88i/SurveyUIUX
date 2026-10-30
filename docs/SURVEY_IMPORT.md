@@ -6,6 +6,8 @@ The original format has raw-response and question-mapping sheets, documented in 
 
 If question headers, routing values, and column positions stay the same, an existing profile can load new responses. Uploaded workbooks match local profiles by sheet name and the exact header fingerprint. Changed wording or structure requires a reviewed profile update. Keep separate survey artifacts instead of overwriting another survey's evidence.
 
+An updated response export with unchanged headers can reuse the existing matching profile under `data/`; do not create a second identical profile for every response revision. Multiple profiles matching the same headers are deliberately rejected as ambiguous.
+
 ## Private profile schema
 
 This is a fictional example; replace the placeholders locally. Do not publish actual question text or respondent information.
@@ -59,6 +61,16 @@ python build_demo.py --excel data/example.xlsx --output data/example.html --serv
 ```
 
 The second command builds and serves the file on loopback. Only the selected HTML is served; source workbooks and manifests are not HTTP routes. Keep the process running to use its local URL. Rebuild after changing the workbook, profile, evidence, or template. Streamlit instead loads the selected workbook directly from the sidebar.
+
+The URL serves the file named by `--output`, byte for byte. Opening `data/example.html` directly in a browser uses that same self-contained explorer and needs no Python process. The server reads the artifact on each request and disables caching, so rebuilding the file then refreshing the page updates the served view.
+
+For an updated response export, the input filename and presentation filename can differ:
+
+```bash
+python build_demo.py --excel data/example_v2.xlsx --output data/example.html
+```
+
+This reuses the presentation path while reading the newer workbook and its `example_v2_evidence_links.jsonl` / `example_v2_evidence_status.json` artifacts. It does not reuse evidence solely because the output filename is unchanged: the workbook fingerprint still must match. Record the exact active input, profile, evidence prefix, output path, and local port in the private handoff. Opening or serving an older HTML snapshot will show its older embedded results. Browser-side filters, masking, and respondent exclusions are temporary and reset on page reload.
 
 ## Generate evidence separately
 
