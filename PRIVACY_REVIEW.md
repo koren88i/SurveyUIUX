@@ -4,6 +4,8 @@ Reviewed on 2026-10-24 for the public source release.
 
 Source/documentation review updated on 2026-10-28 for profile-backed imports, role routing, and grouped source-answer views. Private survey outcomes and batch identifiers are recorded only in ignored local artifacts.
 
+Updated 2026-10-30 for the HTML presentation mask. Other group names can be masked throughout the rendered view while the chosen group's name remains visible. This does not redact the embedded payload or internal selection attributes, and it does not make the private export safe for distribution.
+
 ## Included in the release
 
 - Application source, documentation, tests, and fictional CSV examples.

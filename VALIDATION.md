@@ -24,8 +24,9 @@ The test suite covers:
 - rejection of mismatched evidence and manifests before replacing prior output;
 - explicit open-question request scopes;
 - exported HTML role filtering, source-answer role separation, and physical cell lineage using a Node runtime with an in-memory DOM test double.
+- always-enabled HTML group selection and peer-name masking across matrix labels, comparison/details, tooltips, source text, selector options, and exclusion chips; scores, internal selection keys, and manual row order are preserved.
 
-Latest local verification on 2026-10-28: **32 tests passed**. Two existing pandas `stack` deprecation warnings remain in private-fixture smoke tests. The JavaScript runtime check requires Node and skips when Node is unavailable. Private-fixture checks can also skip when their local inputs are absent.
+Latest local verification on 2026-10-30: **32 tests passed**. Two existing pandas `stack` deprecation warnings remain in private-fixture smoke tests. The JavaScript runtime check requires Node and skips when Node is unavailable. Private-fixture checks can also skip when their local inputs are absent.
 
 Streamlit's test harness was also exercised against local original and profile-backed workbooks, including grouping modes, role filters, empty selections, and switching sources. Full browser visual inspection was unavailable in this session; runtime and HTTP checks do not replace visual QA.
 

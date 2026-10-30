@@ -194,7 +194,7 @@ def branched_workbook(tmp_path):
     from survey_loader import header_fingerprint
 
     raw = pd.DataFrame({
-        "Group": ["A", "A", "A", "A"], "Role": ["member", "member", "member", "lead"],
+        "Group": ["North (A)", "North (A)", "North (A)", "South [B]"], "Role": ["member", "member", "member", "lead"],
         "Shared member": [0, 8, 4, None], "Shared lead": [None, None, None, 10],
         "Leadership": [None, None, None, 0],
         "Member comment": ["Fictional comment", "-", "-", None],
@@ -342,11 +342,11 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const html=fs.readFileSync(process.argv[1],'utf8');
 const nodes=new Map();
 function node(id){
- if(!nodes.has(id))nodes.set(id,{value:'',options:[],innerHTML:'',textContent:'',hidden:true,
+ if(!nodes.has(id))nodes.set(id,{value:'',options:[],innerHTML:'',textContent:'',hidden:true,style:{},events:{},
  previousElementSibling:{textContent:''},dataset:{},classList:{add(){},remove(){}},
  add(option){this.options.push(option);if(this.options.length===1)this.value=option.value},
  replaceChildren(...options){this.options=options;this.value=options[0]?.value||''},
- addEventListener(){},scrollIntoView(){}});
+ addEventListener(name,callback){this.events[name]=callback},scrollIntoView(){},getBoundingClientRect(){return {width:300,height:200}}});
  return nodes.get(id);
 }
 for(const [id,value] of Object.entries({view:'general',metric:'mean',domain:'all',minN:'1'}))node(id).value=value;
@@ -354,7 +354,7 @@ const document={getElementById:node,querySelectorAll:()=>[],querySelector(select
  if(selector==='.cell')return null;
  return node(selector);
 }};
-const context=vm.createContext({document,Option:function(text,value){this.textContent=text;this.value=value},console,Set,Map});
+const context=vm.createContext({document,Option:function(text,value){this.textContent=text;this.value=value},console,Set,Map,window:{innerWidth:1280,innerHeight:900}});
 vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],context);
 vm.runInContext(`
  document.getElementById('role').value='member'; render();
@@ -372,6 +372,38 @@ vm.runInContext(`
  document.getElementById('role').value='member';document.getElementById('audience').value='lead';render();
  if(visibleQuestions().length!==0)throw Error('Invalid role/question intersection');
  if(!document.getElementById('detail').innerHTML.includes('class="empty"'))throw Error('Stale details');
+ document.getElementById('role').value='all';document.getElementById('audience').value='any';
+ for(const view of ['general','team','tenure','team_tenure']){
+   document.getElementById('view').value=view;render();
+   if(teamSelect.disabled)throw Error('Presentation group selector is disabled');
+ }
+ document.getElementById('view').value='team';teamSelect.value='South [B]';
+ const scoresBefore=JSON.stringify(DATA.numeric),meanBefore=branchMean('shared');
+ manualOrder=['South [B]','North (A)'];
+ document.getElementById('hideOtherTeams').checked=true;
+ document.getElementById('hideOtherTeams').events.change();
+ if(manualOrder.join('|')!=='South [B]|North (A)')throw Error('Masking reset manually arranged rows');
+ if(displayText('North (A) and South [B]')!=='Group 1 and South [B]')throw Error('Incorrect selected/peer labels or regex escaping');
+ if(teamSelect.options.find(o=>o.value==='North (A)').textContent!=='Group 1')throw Error('Other names visible in group selector');
+ if(teamSelect.options.find(o=>o.value==='South [B]').textContent!=='South [B]')throw Error('Selected group name hidden');
+ const visible=markup=>markup.replace(/<[^>]*>/g,'');
+ if(visible(document.getElementById('matrix').innerHTML).includes('North (A)'))throw Error('Peer name visible in matrix');
+ showDetail('North (A)','shared',{scroll:false});
+ if(visible(document.getElementById('detail').innerHTML).includes('North (A)'))throw Error('Peer name visible in details, lineage or comparison');
+ if(!document.getElementById('detail').innerHTML.includes('South [B]'))throw Error('Selected group missing from comparison');
+ if(esc('A comment about North (A)').includes('North (A)'))throw Error('Peer name visible in source text');
+ if(escAttr('North (A)')!=='North (A)')throw Error('Internal group identity changed');
+ document.getElementById('metric').selectedOptions=[{textContent:'Mean'}];
+ showCellTooltip({clientX:5,clientY:5},{dataset:{group:'North (A)',q:'shared'}});
+ if(tooltip.innerHTML.includes('North (A)'))throw Error('Peer name visible in tooltip');
+ excludedIds.add(2);renderExclusions();
+ if(document.getElementById('whatif').innerHTML.includes('North (A)'))throw Error('Peer name visible in exclusion chip');
+ excludedIds.clear();
+ if(JSON.stringify(DATA.numeric)!==scoresBefore||branchMean('shared')!==meanBefore)throw Error('Masking changed scores or baseline');
+ document.getElementById('hideOtherTeams').checked=false;
+ document.getElementById('hideOtherTeams').events.change();
+ if(teamSelect.options.find(o=>o.value==='North (A)').textContent!=='North (A)')throw Error('Unmask did not restore names');
+ if(tooltip.innerHTML!=='')throw Error('Stale tooltip survives masking change');
  `,context);
 console.log('HTML runtime role filters and lineage passed');
 '''

@@ -47,6 +47,8 @@ A profile maps physical columns and respondent roles to logical questions. Corre
 
 Both renderers filter responses by role and restrict question eligibility to the selected audience. Comparison means use the active role cohort. The HTML exporter accepts explicit input/output paths and can serve a single generated artifact on localhost with `Cache-Control: no-store`.
 
+The HTML presentation mask is a render-time text transform. The always-enabled group selector identifies the one group whose name stays visible. Other names use stable anonymous labels, including occurrences in dynamic free text and native selector labels. Internal group keys, row selection, scores, and sorting retain their original values. Toggling masking clears stale tooltips and preserves manual row order and the active detail tab. Original names remain in the embedded payload and internal DOM attributes; the mask is not an anonymized export.
+
 ## Source answers and classified evidence
 
 The source-answer tab groups informative answers by logical open question and then role, using a single collapsible question heading. It selects only respondents contributing valid scores to the selected numeric cell. Source comments are not presented as evidence for that question until separately classified.

@@ -74,6 +74,8 @@ Profile-backed surveys use separate `<workbook-stem>_evidence_links.jsonl` and `
 
 The HTML explorer also supports profile-backed forms. Build a separate private artifact with `python build_demo.py --excel data/<workbook>.xlsx --output data/<workbook>.html`. Add `--serve --port 8502` to open it at `http://127.0.0.1:8502`. This server binds to localhost and serves only the generated HTML. The role selector filters responses and question eligibility; the question-group selector distinguishes shared and role-specific questions. The file is self-contained and embeds the included scores and evidence, so keep it private. Rebuild it after changing the workbook, profile, evidence, or UI.
 
+For a live presentation in the HTML explorer, choose the section/team in the group selector, then check **הסתר שמות מדורים אחרים** (or the team equivalent). The selector is available in every view. The selected group's name stays visible; other names become stable anonymous labels in the table, comparison chart, headings, tooltips, comments, and respondent details. Scores, comparisons, sort order, and manually arranged rows remain unchanged. This is a display option; the HTML still embeds the original private data and must not be shared as an anonymized export.
+
 ## Demos
 
 Open [`static/public_demo.html`](static/public_demo.html) directly in a browser to try the interactive explorer with synthetic teams, respondents, scores, and comments. Regenerate it with:

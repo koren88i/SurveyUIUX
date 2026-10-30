@@ -11,6 +11,7 @@ header{background:linear-gradient(135deg,#17365D,#2F75B5);color:white;padding:24
 header h1{margin:0 0 8px;font-size:28px} header p{margin:0;opacity:.9}
 main{padding:22px;max-width:1800px;margin:auto}.panel{background:white;border:1px solid #e3e8ef;border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:0 2px 8px rgba(16,24,40,.04)}
 .controls{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px}.control label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}.control select,.control input{width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;background:white}
+.control .mask-toggle{display:flex;align-items:center;gap:8px;min-height:40px}.control input[type="checkbox"]{width:auto;margin:0;accent-color:var(--blue)}
 .table-wrap{overflow:auto;max-height:640px;border:1px solid var(--border);border-radius:10px}table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:13px}th,td{padding:8px 10px;border-left:1px solid #e4e7ec;border-bottom:1px solid #e4e7ec;text-align:center;white-space:nowrap}th{background:var(--navy);color:white;position:sticky;top:0;z-index:3}th:first-child{right:0;z-index:4}td:first-child{position:sticky;right:0;background:white;font-weight:bold;z-index:2}.cell{cursor:pointer;min-width:80px;font-weight:700}.cell:hover{outline:3px solid #f2c94c;outline-offset:-3px}.masked{background:#f2f4f7;color:#98a2b3;cursor:not-allowed}th.sortable{cursor:pointer;user-select:none}th.sortable:hover{background:#244c7a}.sort-arrow{font-weight:900;margin-inline-start:4px}.drag-handle{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:7px;border:1px solid var(--border);border-radius:6px;background:#f8fafc;color:#475467;cursor:grab;font-weight:900}.drag-handle:active{cursor:grabbing}tr.dragging{opacity:.55}tr.drop-target td{box-shadow:inset 0 3px 0 #f2c94c}.order-tools{display:flex;justify-content:flex-end;margin:-6px 0 10px}.order-tools button{border:1px solid var(--border);background:white;border-radius:8px;padding:7px 12px;cursor:pointer}.order-tools button:hover{background:#f8fafc}
 .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.kpi{border:1px solid var(--border);border-radius:10px;padding:12px;background:#fbfcfe}.kpi .label{color:var(--muted);font-size:12px}.kpi .value{font-size:23px;font-weight:bold;margin-top:4px;direction:ltr;text-align:right}
 .tabs{display:flex;gap:6px;margin:16px 0 10px;flex-wrap:wrap}.tab{border:1px solid var(--border);background:white;border-radius:999px;padding:8px 14px;cursor:pointer}.tab.active{background:var(--navy);color:white}.tab-content{display:none}.tab-content.active{display:block}
@@ -32,6 +33,7 @@ main{padding:22px;max-width:1800px;margin:auto}.panel{background:white;border:1p
 <div class="control"><label>מינימום משיבים</label><input id="minN" type="number" min="3" max="10" value="5"></div>
 <div class="control" id="roleControl" hidden><label>תפקיד המשיבים</label><select id="role"></select></div>
 <div class="control" id="audienceControl" hidden><label>קבוצת שאלות</label><select id="audience"></select></div>
+<div class="control"><label class="mask-toggle"><input id="hideOtherTeams" type="checkbox"><span id="maskLabel">הסתר שמות קבוצות אחרות</span></label></div>
 </div>
 <p class="subtitle" id="surveyNote"></p>
 <div class="notice" id="evidenceStatus"></div>
@@ -61,6 +63,15 @@ let draggedGroup=null;
 const teams=[...new Set(DATA.numeric.map(r=>r.team))].sort();
 const teamSelect=document.getElementById('team'); teams.forEach(t=>teamSelect.add(new Option(t,t))); teamSelect.value=teams[0]||'';
 const survey=DATA.survey||{},groupLabel=survey.group_label||'צוות',splitLabel=survey.split_label||'וותק';
+document.getElementById('maskLabel').textContent=groupLabel==='מדור'?'הסתר שמות מדורים אחרים':'הסתר שמות צוותים אחרים';
+function displayText(value){
+ const text=String(value??'');if(!document.getElementById('hideOtherTeams').checked)return text;
+ const peers=teams.filter(team=>team!==teamSelect.value&&team).sort((a,b)=>b.length-a.length);
+ if(!peers.length)return text;
+ const pattern=new RegExp(peers.map(name=>name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'g');
+ return text.replace(pattern,name=>`${groupLabel} ${teams.indexOf(name)+1}`);
+}
+function syncTeamLabels(){for(const option of teamSelect.options)option.textContent=displayText(option.value);teamSelect.disabled=false}
 document.getElementById('evidenceStatus').textContent=DATA.status.message||'';
 const domainSelect=document.getElementById('domain');domainSelect.replaceChildren(new Option('הכול','all'));for(const [id,label] of new Map(DATA.catalog.map(q=>[q.domain,q.domain_label])))domainSelect.add(new Option(label,id));domainSelect.value=DATA.survey?'all':(DATA.catalog.some(q=>q.domain==='manager')?'manager':'all');
 if(DATA.survey){
@@ -73,7 +84,7 @@ if(DATA.survey){
  document.getElementById('surveyNote').textContent='בחירת תפקיד מציגה רק את תשובותיו ואת השאלות שנשאל. שאלות מקבילות משתי גרסאות הטופס משויכות לאותה שאלה; המקור המקורי נשמר בכל ציון. '+(survey.zero_is_missing?'0 = לא רלוונטי, ואינו נכלל בחישובים או ב-N. ':'')+'הממוצע להשוואה מחושב בתוך סינון התפקיד הפעיל.';
  document.querySelector('#metric option[value="delta"]').textContent='פער מהממוצע הכללי';
 }
-const controls=['view','metric','domain','team','minN','role','audience']; controls.forEach(id=>document.getElementById(id).addEventListener('change',()=>{manualOrder=[];hideCellTooltip();render({scrollDetail:false})}));
+const controls=['view','metric','domain','team','minN','role','audience','hideOtherTeams']; controls.forEach(id=>document.getElementById(id).addEventListener('change',()=>{const displayOnly=id==='hideOtherTeams'||(id==='team'&&document.getElementById('view').value!=='team_tenure');if(!displayOnly)manualOrder=[];const activeTab=displayOnly?document.querySelector('.tab.active')?.dataset.tab:null;hideCellTooltip();render({scrollDetail:false});if(activeTab)document.querySelector(`[data-tab="${activeTab}"]`)?.click?.()}));
 document.getElementById('resetOrder').onclick=()=>{manualOrder=[];sortState={qid:null,desc:true};render({scrollDetail:false})};
 const tooltip=document.getElementById('cellTooltip');
 function groupRows(view,team){
@@ -107,7 +118,7 @@ function toggleExclude(id){if(excludedIds.has(id)){excludedIds.delete(id)}else{e
 function render(options={scrollDetail:false}){
  const scrollDetail=options.scrollDetail===true;
  const view=document.getElementById('view').value,metric=document.getElementById('metric').value,domain=document.getElementById('domain').value,team=teamSelect.value,minN=+document.getElementById('minN').value;
- teamSelect.disabled=view!=='team_tenure';
+ syncTeamLabels();
  const qs=visibleQuestions();if(sortState.qid&&!qs.some(q=>q.question_id===sortState.qid))sortState={qid:null,desc:true};const groups=orderGroups(groupRows(view,team),sortState.qid,metric,minN);let html='<thead><tr><th>קבוצה</th>'+qs.map(q=>`<th class="sortable" data-q="${q.question_id}" title="${esc(q.full_text)}">${esc(q.label)}${sortState.qid===q.question_id?` <span class="sort-arrow">${sortState.desc?'↓':'↑'}</span>`:''}</th>`).join('')+'</tr></thead><tbody>';
  for(const g of groups){html+=`<tr data-group="${escAttr(g.key)}"><td><span class="drag-handle" draggable="true" title="גרור שורה">↕</span>${esc(g.key)}</td>`;const rows=activeNumeric().filter(g.filter);for(const q of qs){const s=calc(rows,q.question_id);if(s.n<minN){html+=`<td class="masked" title="N=${s.n}">&lt;${minN}</td>`}else{const v=s[metric],counts=evidenceCounts(rows,q.question_id,s.delta);const tip=`N=${s.n}
 ממוצע: ${s.mean.toFixed(2)}
@@ -133,7 +144,7 @@ function evidenceCounts(rows,qid,delta){
 function cellRows(td){const f=filterForGroup(td.dataset.group);return activeNumeric().filter(r=>r.question_id===td.dataset.q&&f(r))}
 function showCellTooltip(ev,td){const q=catalogById[td.dataset.q],rows=cellRows(td),s=calc(rows,td.dataset.q),counts=evidenceCounts(rows,td.dataset.q,s.delta),metric=document.getElementById('metric').value,metricLabel=document.getElementById('metric').selectedOptions[0].textContent,value=s[metric];tooltip.innerHTML=`<div class="tooltip-title">${esc(td.dataset.group)} · ${esc(q.label)}</div><div class="tooltip-meta">${esc(metricLabel)}: ${valueText(value,metric)}<br>N=${s.n}<br>ממוצע: ${s.mean.toFixed(2)}<br>פער: ${s.delta>=0?'+':''}${s.delta.toFixed(2)}<br>סטיית תקן: ${s.std.toFixed(2)}<br>אמירות תומכות: ${counts.support} · סותרות/מסייגות: ${counts.contra}</div>${scoreDistributionHtml(s.scores,s.mean)}`;placeTooltip(ev)}
 function placeTooltip(ev){if(!tooltip)return;tooltip.style.display='block';const pad=14;let left=ev.clientX+pad,top=ev.clientY+pad;const rect=tooltip.getBoundingClientRect();if(left+rect.width>window.innerWidth-8)left=ev.clientX-rect.width-pad;if(top+rect.height>window.innerHeight-8)top=ev.clientY-rect.height-pad;tooltip.style.left=`${Math.max(8,left)}px`;tooltip.style.top=`${Math.max(8,top)}px`}
-function hideCellTooltip(){if(tooltip)tooltip.style.display='none'}
+function hideCellTooltip(){if(tooltip){tooltip.style.display='none';tooltip.innerHTML=''}}
 function showDetail(group,qid,options={}){
  const scroll=options.scroll!==false;
  currentSelection={group,qid};
@@ -170,7 +181,7 @@ function respondentRowsHtml(rows,qid){
  const items=ordered.map(r=>`<div class="respondent-row"><div class="respondent-id">R${String(r.response_id).padStart(3,'0')}</div><div><div>${esc(r.team)}</div><div class="respondent-meta">${esc(r.tenure)} · Excel row ${r.source_excel_row}</div></div><div class="respondent-score">${r.score}</div><button type="button" class="exclude-btn" data-exclude-id="${r.response_id}">exclude</button></div>`).join('');
  return `<div class="respondent-list">${items}</div>`
 }function evidenceHtml(items,cls,empty){if(!items.length)return `<div class="empty">${empty}</div>`;return items.map(e=>`<div class="evidence ${cls}"><b>${esc(e.evidence_span)}</b><div>${esc(e.explanation)}</div><div class="meta">R${String(e.response_id).padStart(3,'0')} · ${esc(e.tenure)} · ציון אישי ${e.score} · ${e.relevance} · ${e.confidence}</div><details><summary>תשובת המקור</summary><div class="raw-text">${esc(e.raw_text)}</div></details></div>`).join('')}
-function kpi(l,v){return `<div class="kpi"><div class="label">${l}</div><div class="value">${v}</div></div>`}function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}function escAttr(s){return esc(s)}
+function kpi(l,v){return `<div class="kpi"><div class="label">${l}</div><div class="value">${v}</div></div>`}function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}function esc(s){return escapeHtml(displayText(s))}function escAttr(s){return escapeHtml(s)}
 render({scrollDetail:false});
 </script>
 </body></html>
